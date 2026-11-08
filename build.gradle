@@ -58,7 +58,7 @@ tasks.register('deployReports') {
             'git', 'clone',
             '--branch', 'gh-pages',
             '--single-branch',
-            'https://github.com/ODU-CS350-F26/CS350--lab4-documentation--Moheexy.git',
+            'https://github.com/ODU-CS350-F26/CS350--ciAsst--Moheexy',
             publishDir.absolutePath
         ).inheritIO().start()
 
