@@ -10,13 +10,14 @@ repositories {
 
 
 java {
-    sourceCompatibility = JavaVersion.toVersion(17)
-    targetCompatibility = JavaVersion.toVersion(17)
+    sourceCompatibility = JavaVersion.toVersion(11)
+    targetCompatibility = JavaVersion.toVersion(11)
 }
 
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.7.0'
     testImplementation 'org.hamcrest:hamcrest-library:2.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.7.0'
 }
 
 tasks.withType(Test) {
@@ -27,7 +28,99 @@ tasks.withType(Test) {
         }
 }
 
-application { //Allows  ./gradlew run --args=path-to-test-data
+application {
     mainClass = 'edu.odu.cs.MostCommonWords'
 }
+tasks.register('copyHtml', Copy) {
+    from 'src/main/html'
+    into layout.buildDirectory.dir('reports')
+}
+tasks.register('copyDocs', Copy) {
+    dependsOn 'javadoc'
 
+    from layout.buildDirectory.dir('docs')
+    into layout.buildDirectory.dir('reports')
+}
+tasks.register('reports') {
+    dependsOn 'build', 'copyHtml', 'copyDocs'
+}
+tasks.register('deployReports') {
+    dependsOn 'reports'
+
+    doLast {
+        def reportsDir = layout.buildDirectory.dir('reports').get().asFile
+        def publishDir = layout.buildDirectory.dir('pages-deploy').get().asFile
+
+        
+        project.delete(publishDir)
+
+        def cloneProcess = new ProcessBuilder(
+            'git', 'clone',
+            '--branch', 'gh-pages',
+            '--single-branch',
+            'https://github.com/ODU-CS350-F26/CS350--lab4-documentation--Moheexy.git',
+            publishDir.absolutePath
+        ).inheritIO().start()
+
+        if (cloneProcess.waitFor() != 0) {
+            throw new GradleException('Failed to clone gh-pages branch')
+        }
+
+        // Remove old website files but keep Git metadata
+        publishDir.listFiles().each { file ->
+            if (file.name != '.git') {
+                project.delete(file)
+            }
+        }
+
+        // Copy generated reports into the deployment directory
+        project.copy {
+            from reportsDir
+            into publishDir
+        }
+
+        // Stage changes
+        def addProcess = new ProcessBuilder(
+            'git', 'add', '-A'
+        ).directory(publishDir).inheritIO().start()
+
+        if (addProcess.waitFor() != 0) {
+            throw new GradleException('Failed to stage reports')
+        }
+
+        // Check whether any files changed
+        def statusProcess = new ProcessBuilder(
+            'git', 'status', '--porcelain'
+        ).directory(publishDir).start()
+
+        def changes = statusProcess.inputStream.getText('UTF-8')
+
+        if (statusProcess.waitFor() != 0) {
+            throw new GradleException('Failed to check Git status')
+        }
+
+        if (changes.trim()) {
+
+            // Commit updated reports
+            def commitProcess = new ProcessBuilder(
+                'git', 'commit', '-m', 'Update project reports'
+            ).directory(publishDir).inheritIO().start()
+
+            if (commitProcess.waitFor() != 0) {
+                throw new GradleException('Failed to commit reports')
+            }
+
+            // Push updated reports
+            def pushProcess = new ProcessBuilder(
+                'git', 'push', 'origin', 'gh-pages'
+            ).directory(publishDir).inheritIO().start()
+
+            if (pushProcess.waitFor() != 0) {
+                throw new GradleException('Failed to push reports')
+            }
+
+        } else {
+            println 'No report changes to publish.'
+        }
+    }
+}
